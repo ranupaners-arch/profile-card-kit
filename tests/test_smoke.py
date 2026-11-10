@@ -140,6 +140,21 @@ class AsciiTests(unittest.TestCase):
             svg = neofetch.build(cfg, "dark")
             self.assertNotIn('height="550px"', svg.split("\n")[1])
 
+    def test_non_square_photo_is_not_stretched(self):
+        try:
+            import cv2
+            import numpy as np
+        except ImportError:
+            self.skipTest("opencv not installed")
+        from profilecard import ascii_art
+        tall = np.zeros((600, 400, 3), np.uint8)             # 2:3 portrait
+        tall[:, :200] = (255, 255, 255)                      # left half white, right half black
+        out = ascii_art.to_square(tall)
+        self.assertEqual(out.shape[:2], (400, 400))
+        row = out[200, :, 0]
+        edge = int(np.argmax(row < 128))                     # where white turns black
+        self.assertAlmostEqual(edge, 200, delta=3)           # centre of the canvas: halves stay equal
+
     def test_auto_mode_on_synthetic_portrait(self):
         try:
             import cv2

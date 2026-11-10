@@ -66,12 +66,12 @@ python -m profilecard ascii photo.jpg --auto > ascii.txt
 
 | Option | Use it when |
 |---|---|
-| `--crop x0,y0,x1,y1` | The framing is wrong. Pixel box on a 400×400 version of the photo; the box should be about 0.7 as wide as it is tall. |
+| `--crop x0,y0,x1,y1` | The framing is wrong. Pixel box on the photo fitted onto a 400×400 canvas; the box should be about 0.7 as wide as it is tall. |
 | `--mask-hue 95,135` | The backdrop is one strong colour. OpenCV hue range 0–179 (blue is about 95–135, green about 40–80). Removes that colour only. |
 | `--invert` | You are lit from behind, or the subject is bright on a dark backdrop. |
 | `--auto --crop ...` | Keep the automatic backdrop removal but choose the framing yourself. |
 
-Tips for the photo itself: use a square image, face centred, good light on the face, and no busy background. Glasses and beards come out well; fine hair detail does not, because the picture is only 50×37 characters.
+Tips for the photo itself: any shape works (it is fitted, never stretched), but pick a plain backdrop and good light on the face. Glasses and beards come out well; fine hair detail does not, because the picture is only 50×37 characters. With `requirements-ascii.txt` (OpenCV 4) `--auto` also finds your face to frame it; with OpenCV 5 it falls back to estimating the head from the silhouette, which is a little less precise. A soft shadow on the wall can leave a few stray characters beside your head: crop tighter with `--crop`, or tidy them by hand (option D).
 
 **D. Edit by hand.** `ascii.txt` is plain text. Open it in any editor and tidy stray characters, or write your own art or a logo. Keep every line to 52 characters or fewer; a wider file is rejected with a clear message. More than 37 rows is fine: the card grows taller.
 

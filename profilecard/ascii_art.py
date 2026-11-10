@@ -43,13 +43,44 @@ def load(path) -> list[str]:
     return lines
 
 
-def auto_subject(img, cols: int, rows: int):
-    """Find the subject in a portrait with a plain backdrop.
+def to_square(img, size: int = 400):
+    """Fit any photo onto a size x size canvas without stretching it.
 
-    The backdrop colour is the median of the image border. Everything close to it is
-    removed, the largest remaining blob is the subject, and the crop is that blob's
-    width, anchored at its top, at the card's portrait aspect ratio.
-    Returns (foreground mask, (x0, y0, x1, y1)) on the 400x400 image.
+    The photo is scaled so its longer side is `size` and centred; the empty strips are
+    filled by repeating the photo's edge pixels (a plain backdrop stays plain).
+    """
+    import cv2
+
+    h, w = img.shape[:2]
+    scale = size / max(h, w)
+    img = cv2.resize(img, (max(1, round(w * scale)), max(1, round(h * scale))), interpolation=cv2.INTER_AREA)
+    h, w = img.shape[:2]
+    top, left = (size - h) // 2, (size - w) // 2
+    return cv2.copyMakeBorder(img, top, size - h - top, left, size - w - left, cv2.BORDER_REPLICATE)
+
+
+def find_face(gray):
+    """Largest frontal face as (x, y, w, h) on the 400x400 canvas, or None."""
+    import cv2
+
+    if not hasattr(cv2, "CascadeClassifier"):    # removed in OpenCV 5: fall back to the head-width guess
+        return None
+    cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    if cascade.empty():
+        return None
+    faces = cascade.detectMultiScale(cv2.equalizeHist(gray), scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    return max(faces, key=lambda f: f[2] * f[3]) if len(faces) else None
+
+
+def auto_subject(img, cols: int, rows: int):
+    """Find the subject in a portrait with a fairly plain backdrop.
+
+    Backdrop: the median colour of the image border. Pixels close to it AND connected
+    to the border are removed (so a white shirt enclosed by a jacket stays, and a soft
+    shadow gradient on the wall still goes). The largest remaining blob is the subject.
+    Crop: centred on the detected face when OpenCV finds one, otherwise sized from the
+    width of the subject's top third. Both are at the card's portrait aspect ratio.
+    Returns (foreground mask, (x0, y0, x1, y1)) on the 400x400 canvas.
     """
     import cv2
     import numpy as np
@@ -59,7 +90,11 @@ def auto_subject(img, cols: int, rows: int):
     border = np.concatenate([lab[:b].reshape(-1, 3), lab[-b:].reshape(-1, 3),
                              lab[:, :b].reshape(-1, 3), lab[:, -b:].reshape(-1, 3)])
     dist = np.linalg.norm(lab - np.median(border, axis=0), axis=2)
-    bg = cv2.morphologyEx((dist < 28).astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    near = cv2.morphologyEx((dist < 34).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    n, labels, _, _ = cv2.connectedComponentsWithStats(near)
+    edge_labels = set(np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))) - {0}
+    bg = np.isin(labels, list(edge_labels)).astype(np.uint8)
+
     n, labels, stats, _ = cv2.connectedComponentsWithStats(1 - bg)
     if n < 2:
         return np.ones((400, 400), np.uint8), (0, 0, 400, 400)
@@ -67,17 +102,26 @@ def auto_subject(img, cols: int, rows: int):
     fg = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
     ys, xs = np.where(fg > 0)
     y0, y1 = ys.min(), ys.max()
-    # Size the crop from the head (the top third of the subject), not the shoulders.
-    band = fg[y0:y0 + max(8, int((y1 - y0) * 0.33))]
-    bx = np.where(band.any(axis=0))[0]
+
     aspect = 0.696 * (cols / rows) / (COLS / ROWS)       # width / height of the crop
-    w = min(400.0, (bx.max() - bx.min()) * 1.45)
-    top = max(0.0, y0 - 6.0)
+    face = find_face(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
+    if face is not None:
+        fx, fy, fw, fh = (float(v) for v in face)
+        w = min(400.0, fw * 2.3)
+        top = max(0.0, fy - fh * 0.55)                    # leave room for hair
+        centre = fx + fw / 2
+    else:
+        # Size the crop from the head (the top third of the subject), not the shoulders.
+        band = fg[y0:y0 + max(8, int((y1 - y0) * 0.33))]
+        bx = np.where(band.any(axis=0))[0]
+        w = min(400.0, (bx.max() - bx.min()) * 1.45)
+        top = max(0.0, y0 - 6.0)
+        centre = (bx.min() + bx.max()) / 2
     h = w / aspect
     if top + h > 400:
         h = 400 - top
         w = h * aspect
-    left = min(max((bx.min() + bx.max()) / 2 - w / 2, 0.0), 400 - w)
+    left = min(max(centre - w / 2, 0.0), 400 - w)
     return fg, (int(left), int(top), int(left + w), int(top + h))
 
 
@@ -88,7 +132,7 @@ def from_image(src: str, crop: tuple[int, int, int, int] | None = None,
 
     auto      detect the plain backdrop from the image border, remove it and crop to the
               subject. The easiest start; use crop/mask_hue to fine-tune.
-    crop      (x0, y0, x1, y1) in pixels of the image resized to 400x400; default: whole image.
+    crop      (x0, y0, x1, y1) in pixels of the photo fitted onto a 400x400 canvas; default: whole canvas.
     mask_hue  (low, high) OpenCV hue range (0-179) of a plain backdrop to blank out, e.g. (95, 135) for blue.
     invert    swap dark/light, for pictures with a bright subject on a dark background.
 
@@ -103,7 +147,7 @@ def from_image(src: str, crop: tuple[int, int, int, int] | None = None,
     img = cv2.imread(src)
     if img is None:
         raise SystemExit(f"cannot read image: {src}")
-    img = cv2.resize(img, (400, 400), interpolation=cv2.INTER_AREA)
+    img = to_square(img)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     eq = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(6, 6)).apply(gray)

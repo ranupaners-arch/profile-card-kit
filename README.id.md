@@ -63,12 +63,12 @@ python -m profilecard ascii foto.jpg --auto > ascii.txt
 
 | Opsi | Pakai kalau |
 |---|---|
-| `--crop x0,y0,x1,y1` | Bingkainya salah. Kotak piksel pada versi 400×400 dari foto; lebar kotak sekitar 0,7 kali tingginya. |
+| `--crop x0,y0,x1,y1` | Bingkainya salah. Kotak piksel pada foto yang disesuaikan ke kanvas 400×400; lebar kotak sekitar 0,7 kali tingginya. |
 | `--mask-hue 95,135` | Latar berwarna satu warna kuat. Rentang hue OpenCV 0–179 (biru sekitar 95–135, hijau sekitar 40–80). Hanya membuang warna itu. |
 | `--invert` | Cahaya dari belakang, atau subjek terang di latar gelap. |
 | `--auto --crop ...` | Tetap pakai pembuangan latar otomatis, tapi tentukan sendiri bingkainya. |
 
-Tips fotonya: pakai gambar persegi, wajah di tengah, cahaya bagus di wajah, dan latar tidak ramai. Kacamata dan jenggot terbaca baik; detail rambut halus tidak, karena gambarnya hanya 50×37 karakter.
+Tips fotonya: bentuk apa pun boleh (foto disesuaikan, tidak pernah digepengkan), tapi pilih latar polos dan cahaya bagus di wajah. Kacamata dan jenggot terbaca baik; detail rambut halus tidak, karena gambarnya hanya 50×37 karakter. Dengan `requirements-ascii.txt` (OpenCV 4), `--auto` juga mendeteksi wajahmu untuk menentukan bingkai; dengan OpenCV 5 ia memperkirakan kepala dari siluet, sedikit kurang presisi. Bayangan lembut di dinding bisa menyisakan beberapa karakter nyasar di samping kepala: potong lebih ketat dengan `--crop`, atau rapikan dengan tangan (cara D).
 
 **D. Edit manual.** `ascii.txt` adalah teks biasa. Buka di editor mana pun untuk merapikan karakter nyasar, atau tulis seni ASCII atau logo sendiri. Jaga tiap baris maksimal 52 karakter; berkas yang lebih lebar ditolak dengan pesan yang jelas. Lebih dari 37 baris boleh: kartu akan memanjang.
 
