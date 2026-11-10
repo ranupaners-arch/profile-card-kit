@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+/.claude*
+# Hashed per-repo line counts. The workflow force-adds this in your own profile repo.
+cache/

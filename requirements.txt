@@ -1,0 +1,4 @@
+pyyaml>=6
+lxml>=5
+python-dateutil>=2.9
+requests>=2.31

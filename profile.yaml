@@ -1,0 +1,56 @@
+# profile-card-kit: the only file you need to edit.
+# Run `python -m profilecard build` to render, `python -m profilecard update` to also fill in GitHub stats.
+
+# Your GitHub username. Leave empty inside GitHub Actions to use the repository owner.
+github_username: octocat
+
+# Shown as the card title (uppercased). Defaults to the username.
+name: Your Name
+
+# Optional. Fills the "{uptime}" row ("22 years, 4 months, 16 days"). Remove it to hide the row.
+birthday: 2000-01-31
+
+# Optional path to an ASCII portrait (max about 50 columns x 37 rows).
+# Leave out for a neutral silhouette. Make one with: python -m profilecard ascii photo.png > ascii.txt
+# ascii: ascii.txt
+
+# Rows on the right of the card. Each row is `Label: value`.
+# A dot in the label colours both halves (Languages.Programming). A bare `""` adds a blank line.
+info:
+  - OS: macOS, Linux
+  - Uptime: "{uptime}"
+  - Host: example.dev
+  - Role: Software developer
+  - IDE: VS Code
+  - ""
+  - Languages.Programming: TypeScript, Python
+  - Languages.Real: English
+  - ""
+  - Hobbies.Software: Open source
+
+# Second block, headed "- Contact". Remove the key to hide it.
+contact:
+  - Email: you@example.com
+  - Website: example.dev
+  - GitHub: octocat
+
+# Pixel-art buttons under the card (1 to 5 work well). type: website | x | email
+links:
+  - type: website
+    url: https://example.dev
+    label: Portfolio
+  - type: x
+    url: https://x.com/example
+  - type: email
+    url: you@example.com
+
+# Where generated files go (relative to this file).
+output_dir: output
+
+# Label of the counter under the Pac-Man graph.
+pacman_label: Contributions
+
+# Optional colour overrides per theme. Keys: bg fg key value add dele cc (and flash for pacman).
+# colors:
+#   dark:
+#     key: "#ff7b72"

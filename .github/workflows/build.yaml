@@ -1,0 +1,76 @@
+# Rebuild the neofetch card and link buttons from profile.yaml, refresh the GitHub
+# stats, and commit the result. Runs daily, on manual dispatch, and when config or code changes.
+name: Update profile card
+
+on:
+  schedule:
+    - cron: "0 22 * * *"   # 22:00 UTC daily; change to suit your timezone
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "profile.yaml"
+      - "ascii.txt"
+      - "profilecard/**"
+      - "requirements.txt"
+      - ".github/workflows/build.yaml"
+
+permissions:
+  contents: write
+
+# One writer at a time: the pacman workflow commits to the same branch.
+concurrency:
+  group: profile-update
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The template ships with `github_username: octocat`; do nothing until you change it.
+      - name: Check profile.yaml was customised
+        id: gate
+        run: |
+          if grep -qE '^github_username:[[:space:]]*octocat[[:space:]]*$' profile.yaml; then
+            echo "profile.yaml still uses the placeholder username; skipping."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        if: steps.gate.outputs.ready == 'true'
+        run: python -m pip install -r requirements.txt
+
+      - name: Build card and refresh stats
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          # Optional secret ACCESS_TOKEN (a PAT with `repo` + `read:user`) also counts
+          # private repos. Without it GITHUB_TOKEN fills in every public number.
+          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
+        run: python -m profilecard update
+
+      - name: Commit
+        if: steps.gate.outputs.ready == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add output/neofetch output/links output/snippet.md
+          git add -f cache/
+          git diff --cached --quiet && { echo "No changes"; exit 0; }
+          git commit -m "chore(profile): refresh card stats"
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

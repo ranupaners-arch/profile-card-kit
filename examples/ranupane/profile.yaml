@@ -1,0 +1,41 @@
+# Example: the author's own profile. Copy to the repo root as profile.yaml and edit.
+github_username: ranupaners-arch
+name: Ranupane Rimba Argana
+birthday: 2004-06-25
+ascii: ascii.txt
+
+info:
+  - OS: macOS, Linux, iOS, Android
+  - Uptime: "{uptime}"
+  - Host: kukerjain.dev
+  - Kernel: Arabic Language Education @ Institut Muslim Cendekia
+  - Role.Startup: Founder KukerjainAja (Web & App Development Services)
+  - IDE: VS Code, Orca, Cursor
+  - ""
+  - Languages.Programming: Dart, TypeScript, JavaScript, Python
+  - Languages.Computer: HTML, CSS, JSON, YAML, Markdown
+  - Languages.Real: Indonesian, Arabic, English
+  - ""
+  - Hobbies.Software: Web & App Development
+  - Hobbies.Real: Poetry, Writing, Reading
+
+contact:
+  - Personal Email: ranupaners@gmail.com
+  - Bussines Email: ranupaners@kukerjain.dev
+  - Website: ranupane.kukerjain.dev
+  - Instagram: "@_mberimbe"
+  - X: "@rnpainvest"
+  - Substack: "@rimbaranupane"
+  - GitHub: ranupaners-arch
+
+links:
+  - type: website
+    url: https://ranupane.kukerjain.dev/
+    label: Portfolio
+  - type: x
+    url: https://x.com/kukerjainweb
+  - type: email
+    url: ranupaners@gmail.com
+
+output_dir: output
+pacman_label: Contributions
