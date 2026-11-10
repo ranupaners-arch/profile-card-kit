@@ -1,10 +1,16 @@
 """Offline smoke tests. Run: python -m unittest discover tests"""
+import contextlib
 import datetime as dt
+import io
+import os
 import tempfile
 import textwrap
 import unittest
 from pathlib import Path
 
+from unittest import mock
+
+import requests
 from lxml import etree
 
 from profilecard import cli
@@ -59,6 +65,85 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = load(write_cfg(tmp))
             self.assertEqual(cfg.links[1].url, "mailto:a@b.c")
+
+
+class YamlTextTests(unittest.TestCase):
+    def test_values_stay_as_typed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = load(write_cfg(tmp, "github_username: a\ninfo:\n  - Pets: no\n  - Remote: yes\n"
+                                       "  - Version: 1.10\n  - Zip: 01234\n  - Since: 2020-01-01\n"))
+            self.assertEqual(cfg.info, [("Pets", "no"), ("Remote", "yes"), ("Version", "1.10"),
+                                        ("Zip", "01234"), ("Since", "2020-01-01")])
+
+    def test_birthday_is_still_a_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(load(write_cfg(tmp)).birthday, dt.date(2000, 1, 31))
+
+    def test_pacman_switch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(load(write_cfg(tmp)).pacman)
+            off = load(write_cfg(tmp, BASE + "pacman: false\n"))
+            self.assertFalse(off.pacman)
+            self.assertNotIn("pacman", cli.write_snippet(off).read_text())
+            with self.assertRaises(ConfigError):
+                load(write_cfg(tmp, BASE + "pacman: maybe\n"))
+
+    def test_ci_info(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("USER_NAME", None)
+            cfg = load(write_cfg(tmp))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                cli.cmd_ci_info(cfg, None)
+            self.assertEqual(buf.getvalue().split(), ["username=octocat", "pacman=true"])
+
+    def test_username_falls_back_to_repository_owner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_cfg(tmp, "name: x\n")
+            with mock.patch.dict(os.environ, {"GITHUB_REPOSITORY_OWNER": "someone"}):
+                os.environ.pop("USER_NAME", None)
+                self.assertEqual(load(path).username, "someone")
+
+
+class GithubTests(unittest.TestCase):
+    def reply(self, status, payload=None):
+        r = mock.Mock(status_code=status, text="boom")
+        r.json.return_value = payload or {}
+        return r
+
+    def test_retries_server_errors_then_succeeds(self):
+        from profilecard import github
+        ok = self.reply(200, {"data": {"x": 1}})
+        with mock.patch.object(github, "token", return_value="t"), mock.patch.object(github.time, "sleep"), \
+                mock.patch.object(github.requests, "post", side_effect=[self.reply(502), self.reply(502), ok]) as post:
+            self.assertEqual(github.gql("q", {}), {"x": 1})
+            self.assertEqual(post.call_count, 3)
+
+    def test_gives_up_with_a_clear_message(self):
+        from profilecard import github
+        with mock.patch.object(github, "token", return_value="t"), mock.patch.object(github.time, "sleep"), \
+                mock.patch.object(github.requests, "post", side_effect=requests.ConnectionError("down")):
+            with self.assertRaisesRegex(RuntimeError, "failed after 3 attempts"):
+                github.gql("q", {})
+
+    def test_bad_token_is_not_retried(self):
+        from profilecard import github
+        with mock.patch.object(github, "token", return_value="t"), \
+                mock.patch.object(github.requests, "post", return_value=self.reply(401)) as post:
+            with self.assertRaisesRegex(RuntimeError, "rejected the token"):
+                github.gql("q", {})
+            self.assertEqual(post.call_count, 1)
+
+    def test_cli_reports_api_errors_without_traceback(self):
+        from profilecard import github
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_cfg(tmp)
+            err = io.StringIO()
+            with mock.patch.object(github, "user_info", side_effect=RuntimeError("no such user")), \
+                    contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                code = cli.main(["-c", str(path), "stats"])
+            self.assertEqual(code, 1)
+            self.assertIn("error: no such user", err.getvalue())
 
 
 class RenderTests(unittest.TestCase):
@@ -155,6 +240,28 @@ class AsciiTests(unittest.TestCase):
         edge = int(np.argmax(row < 128))                     # where white turns black
         self.assertAlmostEqual(edge, 200, delta=3)           # centre of the canvas: halves stay equal
 
+    def test_backdrop_mask_handles_shadow_but_keeps_skin_and_hair(self):
+        try:
+            import cv2
+            import numpy as np
+        except ImportError:
+            self.skipTest("opencv not installed")
+        from profilecard import ascii_art
+        # Cream wall, bright at the top and fading to a deep shadow on the right.
+        wall_lab = np.zeros((400, 400, 3), np.float32)
+        xs = np.linspace(0, 1, 400)[None, :]
+        wall_lab[..., 0] = 225 - 95 * xs ** 2                 # lightness 225 -> 130
+        wall_lab[..., 1] = 128 - 1.0 * xs                     # hue barely moves
+        wall_lab[..., 2] = 134 + 9.0 * xs
+        img = cv2.cvtColor(np.clip(wall_lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
+        cv2.circle(img, (150, 220), 62, cv2.cvtColor(np.uint8([[[170, 140, 142]]]), cv2.COLOR_LAB2BGR)[0, 0].tolist(), -1)  # skin
+        cv2.ellipse(img, (150, 170), (66, 40), 0, 180, 360, (20, 20, 20), -1)                                                # hair
+        bg = ascii_art.backdrop_mask(img)
+        self.assertEqual(bg[40, 20], 1)        # lit wall
+        self.assertEqual(bg[200, 380], 1)      # deep shadow on the wall
+        self.assertEqual(bg[240, 150], 0)      # skin kept
+        self.assertEqual(bg[160, 150], 0)      # dark hair kept
+
     def test_auto_mode_on_synthetic_portrait(self):
         try:
             import cv2
@@ -192,6 +299,11 @@ def fake_pacman_svg(today: dt.date) -> str:
 
 
 class PacmanTests(unittest.TestCase):
+    def test_missing_svgs_give_a_clear_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(RuntimeError, "generate the Pac-Man SVGs first"):
+                pacman.add_counter(load(write_cfg(tmp)))
+
     def test_counter_totals_match_calendar(self):
         today = dt.date(2026, 6, 15)
         calendar = {today: 5, today - dt.timedelta(days=1): 3, today - dt.timedelta(days=2): 2}

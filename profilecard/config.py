@@ -19,6 +19,21 @@ class ConfigError(ValueError):
     """The config file is missing, unreadable or has an invalid field."""
 
 
+class _Loader(yaml.SafeLoader):
+    """SafeLoader that leaves yes/no/on/off, 1.10 and 0123 as the text the user typed.
+
+    Plain YAML turns `Pets: no` into False and `Version: 1.10` into 1.1. Every value in
+    this file is text for the card, so only dates (and null) are still interpreted.
+    """
+
+
+_Loader.yaml_implicit_resolvers = {
+    ch: [(tag, rx) for tag, rx in resolvers
+         if tag not in ("tag:yaml.org,2002:bool", "tag:yaml.org,2002:int", "tag:yaml.org,2002:float")]
+    for ch, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+
+
 @dataclass
 class Link:
     type: str
@@ -40,6 +55,7 @@ class Config:
     output_dir: Path
     cache_dir: Path
     pacman_label: str = "Contributions"
+    pacman: bool = True
     extra: dict = field(default_factory=dict)
 
 
@@ -57,6 +73,17 @@ def _items(raw, where: str) -> list:
                 f"{where}: each entry must be a single `Key: value` pair or an empty line, got {entry!r}"
             )
     return out
+
+
+def _bool(value, default: bool, where: str) -> bool:
+    if value in (None, ""):
+        return default
+    text = str(value).strip().lower()
+    if text in ("true", "yes", "on"):
+        return True
+    if text in ("false", "no", "off"):
+        return False
+    raise ConfigError(f"{where}: expected true or false, got {value!r}")
 
 
 def _date(value, where: str) -> dt.date | None:
@@ -92,7 +119,7 @@ def load(path: str | os.PathLike = "profile.yaml") -> Config:
     if not path.is_file():
         raise ConfigError(f"config file not found: {path}")
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        data = yaml.load(path.read_text(encoding="utf-8"), Loader=_Loader)  # noqa: S506 - restricted SafeLoader subclass or {}
     except yaml.YAMLError as e:
         raise ConfigError(f"{path.name} is not valid YAML: {e}") from e
     if not isinstance(data, dict):
@@ -125,4 +152,5 @@ def load(path: str | os.PathLike = "profile.yaml") -> Config:
         output_dir=(root / str(data.get("output_dir") or "output")).resolve(),
         cache_dir=(root / "cache").resolve(),
         pacman_label=str(data.get("pacman_label") or "Contributions"),
+        pacman=_bool(data.get("pacman"), True, "pacman"),
     )

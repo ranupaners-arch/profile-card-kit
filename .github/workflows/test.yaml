@@ -1,0 +1,27 @@
+# Offline tests for the generator itself. No secrets and no network.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-ascii.txt
+      # The ascii extras are included so the portrait tests run instead of being skipped.
+      - run: python -m pip install -r requirements-ascii.txt
+      - run: python -m unittest discover tests -v

@@ -1,5 +1,12 @@
-# Generate the Pac-Man contribution-graph animation (abozanona/pacman-contribution-graph),
-# then add a running contribution counter with `python -m profilecard pacman`.
+# Generate the Pac-Man contribution-graph animation, then add a running contribution
+# counter with `python -m profilecard pacman`. Skipped when `pacman: false` in profile.yaml.
+#
+# Two jobs on purpose. `generate` runs third-party code with a READ-ONLY token and no
+# stored git credentials; `commit` has write access but runs only our own steps.
+#
+# Privacy: the action is third-party code (abozanona/pacman-contribution-graph, no licence
+# file) that reports your GitHub username and game score to its author's server.
+# See the README section "Privacy and third-party code".
 name: Pacman contribution graph
 
 on:
@@ -9,11 +16,12 @@ on:
   push:
     branches: [main]
     paths:
+      - "profile.yaml"
       - ".github/workflows/pacman.yaml"
       - "profilecard/templates/pacman.py"
 
-permissions:
-  contents: write
+# Nothing at the top level: each job asks for exactly what it needs.
+permissions: {}
 
 concurrency:
   group: profile-update
@@ -23,12 +31,17 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.info.outputs.pacman }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          persist-credentials: false   # the third-party action must not find a token in .git/config
 
+      # The template ships with `github_username: octocat`; do nothing until you change it.
       - name: Check profile.yaml was customised
         id: gate
         run: |
@@ -38,29 +51,6 @@ jobs:
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
-
-      # github_username falls back to the repository owner when empty in profile.yaml.
-      - name: Resolve username
-        if: steps.gate.outputs.ready == 'true'
-        id: user
-        run: |
-          name=$(sed -nE 's/^github_username:[[:space:]]*"?([^"#[:space:]]+)"?.*$/\1/p' profile.yaml | head -n1)
-          echo "name=${name:-$GITHUB_REPOSITORY_OWNER}" >> "$GITHUB_OUTPUT"
-
-      # Consider pinning this action to a commit SHA once you have reviewed it.
-      - name: Generate pacman SVG
-        if: steps.gate.outputs.ready == 'true'
-        uses: abozanona/pacman-contribution-graph@main
-        with:
-          github_user_name: ${{ steps.user.outputs.name }}
-          github_token: ${{ secrets.ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
-
-      - name: Copy SVG
-        if: steps.gate.outputs.ready == 'true'
-        run: |
-          mkdir -p output/pacman
-          cp dist/pacman-contribution-graph-dark.svg output/pacman/dark.svg
-          cp dist/pacman-contribution-graph.svg output/pacman/light.svg
 
       - name: Set up Python
         if: steps.gate.outputs.ready == 'true'
@@ -74,14 +64,65 @@ jobs:
         if: steps.gate.outputs.ready == 'true'
         run: python -m pip install -r requirements.txt
 
-      - name: Add contribution counter
+      # Reads profile.yaml: the username (falls back to the repository owner) and `pacman:`.
+      - name: Read profile.yaml
         if: steps.gate.outputs.ready == 'true'
+        id: info
+        run: python -m profilecard ci-info >> "$GITHUB_OUTPUT"
+
+      # Pinned to a reviewed commit (main, v5.5.2, 2026-11-01). Update it deliberately: read
+      # the new code first, then change the SHA. The token is the built-in GITHUB_TOKEN, limited
+      # to `contents: read` by this job, so it sees public contributions only. Do NOT pass a
+      # personal access token here unless you accept handing it to this code.
+      - name: Generate pacman SVG
+        if: steps.info.outputs.pacman == 'true'
+        uses: abozanona/pacman-contribution-graph@294c47eff28a41339a279107ae771b5fa020037a
+        with:
+          github_user_name: ${{ steps.info.outputs.username }}
+          github_token: ${{ github.token }}
+
+      - name: Copy SVG
+        if: steps.info.outputs.pacman == 'true'
+        run: |
+          mkdir -p output/pacman
+          cp dist/pacman-contribution-graph-dark.svg output/pacman/dark.svg
+          cp dist/pacman-contribution-graph.svg output/pacman/light.svg
+
+      - name: Add contribution counter
+        if: steps.info.outputs.pacman == 'true'
         env:
-          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
+          # Same token as the action, so the counter matches the squares it eats.
+          GITHUB_TOKEN: ${{ github.token }}
         run: python -m profilecard pacman
 
+      - name: Keep the result for the commit job
+        if: steps.info.outputs.pacman == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pacman-svgs
+          path: output/pacman
+          if-no-files-found: error
+          retention-days: 1
+
+  commit:
+    needs: generate
+    if: needs.generate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch generated SVGs
+        uses: actions/download-artifact@v4
+        with:
+          name: pacman-svgs
+          path: output/pacman
+
       - name: Commit
-        if: steps.gate.outputs.ready == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

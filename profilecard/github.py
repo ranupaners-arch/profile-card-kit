@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import requests
@@ -20,15 +21,29 @@ def token() -> str:
     return t
 
 
-def gql(query: str, variables: dict) -> dict:
-    r = requests.post(API, json={"query": query, "variables": variables},
-                      headers={"Authorization": f"bearer {token()}"}, timeout=60)
-    if r.status_code != 200:
-        raise RuntimeError(f"GraphQL {r.status_code}: {r.text[:200]}")
-    data = r.json()
-    if data.get("errors"):
-        raise RuntimeError(f"GraphQL: {json.dumps(data['errors'])[:200]}")
-    return data["data"]
+def gql(query: str, variables: dict, attempts: int = 3) -> dict:
+    """POST a GraphQL query. Retries network errors and 5xx (large repos often 502 once)."""
+    problem = "unknown error"
+    for attempt in range(attempts):
+        try:
+            r = requests.post(API, json={"query": query, "variables": variables},
+                              headers={"Authorization": f"bearer {token()}"}, timeout=60)
+        except requests.RequestException as e:
+            problem = f"network error: {e}"
+        else:
+            if r.status_code == 401:
+                raise RuntimeError("GitHub rejected the token (401). Check ACCESS_TOKEN / GITHUB_TOKEN.")
+            if r.status_code != 200 and r.status_code < 500:
+                raise RuntimeError(f"GraphQL {r.status_code}: {r.text[:200]}")
+            if r.status_code == 200:
+                data = r.json()
+                if data.get("errors"):
+                    raise RuntimeError(f"GraphQL: {json.dumps(data['errors'])[:200]}")
+                return data["data"]
+            problem = f"HTTP {r.status_code}"
+        if attempt + 1 < attempts:
+            time.sleep(2 ** attempt)
+    raise RuntimeError(f"GitHub API request failed after {attempts} attempts ({problem}).")
 
 
 def user_info(username: str) -> dict:

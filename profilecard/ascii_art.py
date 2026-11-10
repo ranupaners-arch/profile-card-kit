@@ -7,6 +7,8 @@ from .config import ConfigError
 
 COLS, ROWS = 50, 37          # grid for 12px font / 14px line height
 MAX_COLS = 52                # wider than this runs into the info column
+SHADOW_SLACK = 0.15          # extra hue tolerance per unit of lightness below the sampled wall
+HUE_TOLERANCE = 8.0          # minimum distance (Lab a/b) from the wall's hue that still counts as wall
 RAMP = " .:-=+*#%@"          # light -> dense
 
 
@@ -72,12 +74,59 @@ def find_face(gray):
     return max(faces, key=lambda f: f[2] * f[3]) if len(faces) else None
 
 
+def backdrop_mask(img):
+    """1 where the pixel is backdrop: the same hue as the wall and connected to the image edge.
+
+    A wall is rarely one colour: shadows change its lightness a lot but its hue little.
+    So the backdrop is modelled as hue (Lab a, b) that follows lightness along a line, fitted
+    on the top strip and the upper left/right edges (the lower edges are usually the person).
+    A pixel is backdrop when its hue sits on that line and its lightness is within the range
+    seen on the wall. Skin, clothes and hair differ in hue or are darker than any wall.
+    """
+    import cv2
+    import numpy as np
+
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float32)
+    b, h = 12, lab.shape[0]
+    samp = np.concatenate([lab[:b].reshape(-1, 3), lab[:h // 2, :b].reshape(-1, 3),
+                           lab[:h // 2, -b:].reshape(-1, 3)])
+    L = samp[:, 0]
+
+    def fit(x, y):
+        var = x.var()
+        slope = float(np.cov(x, y, bias=True)[0, 1] / var) if var > 1.0 else 0.0
+        return slope, float(y.mean() - slope * x.mean())
+
+    keep = np.ones(len(samp), bool)
+    for _ in range(3):                                   # refit without outliers (hair, a shoulder)
+        (sa, ia), (sb, ib) = fit(L[keep], samp[keep, 1]), fit(L[keep], samp[keep, 2])
+        res = np.hypot(samp[:, 1] - (sa * L + ia), samp[:, 2] - (sb * L + ib))
+        keep = res < max(3.0, 2.5 * float(np.median(res[keep])))
+    # Shadows can be much darker than the strips we sampled, but never as dark as hair or a
+    # dark jacket: accept down to half the wall's median lightness, up to just above its brightest.
+    lo, hi = 0.5 * float(np.median(L[keep])), float(np.percentile(L[keep], 99)) + 20
+    # A saturated backdrop (a blue cloth) shifts hue more as its lightness changes than a pale
+    # wall does, so the tolerance grows with the wall's own saturation.
+    saturation = float(np.hypot(np.median(samp[keep, 1]) - 128, np.median(samp[keep, 2]) - 128))
+    tolerance = max(HUE_TOLERANCE, 0.4 * saturation)
+
+    full_L = lab[..., 0]
+    dev = np.hypot(lab[..., 1] - (sa * full_L + ia), lab[..., 2] - (sb * full_L + ib))
+    # The hue line is fitted on the lit part of the wall; deep shadow drifts away from it, so
+    # allow a little more slack the further a pixel is below the sampled lightness.
+    slack = SHADOW_SLACK * np.clip(float(np.percentile(L[keep], 5)) - full_L, 0, None)
+    near = ((dev < tolerance + slack) & (full_L >= lo) & (full_L <= hi)).astype(np.uint8)
+    near = cv2.morphologyEx(near, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    n, labels, _, _ = cv2.connectedComponentsWithStats(near)
+    edge = set(np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))) - {0}
+    return np.isin(labels, list(edge)).astype(np.uint8)
+
+
 def auto_subject(img, cols: int, rows: int):
     """Find the subject in a portrait with a fairly plain backdrop.
 
-    Backdrop: the median colour of the image border. Pixels close to it AND connected
-    to the border are removed (so a white shirt enclosed by a jacket stays, and a soft
-    shadow gradient on the wall still goes). The largest remaining blob is the subject.
+    Backdrop: see backdrop_mask(). It is removed only where it connects to the image edge,
+    so a white shirt enclosed by a jacket stays. The largest remaining blob is the subject.
     Crop: centred on the detected face when OpenCV finds one, otherwise sized from the
     width of the subject's top third. Both are at the card's portrait aspect ratio.
     Returns (foreground mask, (x0, y0, x1, y1)) on the 400x400 canvas.
@@ -85,15 +134,7 @@ def auto_subject(img, cols: int, rows: int):
     import cv2
     import numpy as np
 
-    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float32)
-    b = 12
-    border = np.concatenate([lab[:b].reshape(-1, 3), lab[-b:].reshape(-1, 3),
-                             lab[:, :b].reshape(-1, 3), lab[:, -b:].reshape(-1, 3)])
-    dist = np.linalg.norm(lab - np.median(border, axis=0), axis=2)
-    near = cv2.morphologyEx((dist < 34).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-    n, labels, _, _ = cv2.connectedComponentsWithStats(near)
-    edge_labels = set(np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))) - {0}
-    bg = np.isin(labels, list(edge_labels)).astype(np.uint8)
+    bg = backdrop_mask(img)
 
     n, labels, stats, _ = cv2.connectedComponentsWithStats(1 - bg)
     if n < 2:

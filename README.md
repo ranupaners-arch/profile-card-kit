@@ -20,11 +20,12 @@ Generate a GitHub profile README from one config file: a neofetch-style card wit
 - [Configure](#configure)
 - [Run it locally](#run-it-locally)
 - [Troubleshooting](#troubleshooting)
+- [Privacy and third-party code](#privacy-and-third-party-code)
 - [How it works](#how-it-works)
 
 ## Quick start
 
-You need a GitHub account. Nothing to install: GitHub Actions does the work.
+You need a GitHub account. Nothing to install: GitHub Actions does the work. To run it on your own machine you need Python 3.10 or newer (see [Run it locally](#run-it-locally)).
 
 **1. Create your profile repository.**
 Click **Use this template** on this repo (or copy the files), and name the new repository **exactly your GitHub username**, for example `octocat/octocat`. GitHub shows that repo's `README.md` on your profile. It must be public.
@@ -71,7 +72,7 @@ python -m profilecard ascii photo.jpg --auto > ascii.txt
 | `--invert` | You are lit from behind, or the subject is bright on a dark backdrop. |
 | `--auto --crop ...` | Keep the automatic backdrop removal but choose the framing yourself. |
 
-Tips for the photo itself: any shape works (it is fitted, never stretched), but pick a plain backdrop and good light on the face. Glasses and beards come out well; fine hair detail does not, because the picture is only 50×37 characters. With `requirements-ascii.txt` (OpenCV 4) `--auto` also finds your face to frame it; with OpenCV 5 it falls back to estimating the head from the silhouette, which is a little less precise. A soft shadow on the wall can leave a few stray characters beside your head: crop tighter with `--crop`, or tidy them by hand (option D).
+Tips for the photo itself: any shape works (it is fitted, never stretched), but pick a plain backdrop and good light on the face. Glasses and beards come out well; fine hair detail does not, because the picture is only 50×37 characters. With `requirements-ascii.txt` (OpenCV 4) `--auto` also finds your face to frame it; with OpenCV 5 it falls back to estimating the head from the silhouette, which is a little less precise. The backdrop is judged by hue, not brightness, so a wall that fades into shadow is removed cleanly while skin, clothes and dark hair stay. A busy or multicoloured background is the hard case: crop tighter with `--crop`, or tidy the result by hand (option D).
 
 **D. Edit by hand.** `ascii.txt` is plain text. Open it in any editor and tidy stray characters, or write your own art or a logo. Keep every line to 52 characters or fewer; a wider file is rejected with a clear message. More than 37 rows is fine: the card grows taller.
 
@@ -97,6 +98,7 @@ Everything lives in [`profile.yaml`](profile.yaml).
 | `contact` | A second block headed "Contact", same row format. Remove to hide. |
 | `links` | 1 to 5 pixel-art buttons. `type` is `website`, `x` or `email`; `label` is optional. |
 | `output_dir` | Where generated files go. Default `output`. |
+| `pacman` | `true` (default) or `false`. With `false` the snippet leaves out the Pac-Man graph and the pacman workflow does nothing, so no third-party action runs. See [Privacy](#privacy-and-third-party-code). |
 | `pacman_label` | Text before the Pac-Man counter. Default `Contributions`. |
 | `colors` | Override colours per theme. Keys: `bg fg key value add dele cc` (and `flash` for the Pac-Man counter). |
 
@@ -129,6 +131,7 @@ python -m unittest discover tests                 # offline tests
 | `update` | `build`, then `stats`. | yes |
 | `pacman` | Adds the contribution counter to `output/pacman/{dark,light}.svg`. | yes |
 | `ascii IMAGE` | Turns a portrait into ASCII art (see above). | no |
+| `ci-info` | Prints `username=` and `pacman=` for workflows to read. | no |
 
 Put `-c path/to/profile.yaml` before the command to use another config. Use a token from `gh auth token` for a quick local run: `GITHUB_TOKEN=$(gh auth token) python -m profilecard update`.
 
@@ -139,10 +142,22 @@ Put `-c path/to/profile.yaml` before the command to use another config. Use a to
 | Workflow fails at **Commit** with `403` | Step 4: give the workflow **Read and write permissions**. |
 | Workflow runs but does nothing | `github_username` is still `octocat`. Change it. |
 | Stats show `0` or miss private repos | Add the `ACCESS_TOKEN` secret (step 5), then run the workflow again. |
-| Pac-Man image is broken | Run **Pacman contribution graph** once. It needs `output/pacman/` to exist. |
+| Pac-Man image is broken | Run **Pacman contribution graph** once, or set `pacman: false` and use the snippet again. |
+| `error: GitHub rejected the token (401)` | `ACCESS_TOKEN` is expired or wrong. Recreate it, or delete the secret to fall back to public numbers. |
+| `error: ... failed after 3 attempts` | GitHub or the network had a bad moment, or a repository is too large to count. Re-run the workflow. |
+| `Pets: no` shows `no` | Intended: values are kept exactly as you type them. |
 | Card did not change after a run | GitHub caches images for a few minutes. Hard-refresh, or wait. |
 | `config error: ... columns wide` | `ascii.txt` is wider than 52 characters. Regenerate it, or trim the lines. |
 | `The ascii command needs OpenCV` | `pip install -r requirements-ascii.txt`. |
+
+## Privacy and third-party code
+
+Most of this project is plain Python that runs in your repository. One part is not:
+
+- **The Pac-Man animation** is drawn by [abozanona/pacman-contribution-graph](https://github.com/abozanona/pacman-contribution-graph), an action by another author. Its source (version 5.5.2, reviewed when this kit was written) sends your **GitHub username** to the author's server on every run, and your Pac-Man **score and step counts** to a leaderboard endpoint. It does not send your token there. The bundled `dist/` build and the npm library inside it were not reviewed. The repository has **no licence file**, so it is used as an action and nothing is copied from it.
+- **What this kit does about it:** the action is pinned to one reviewed commit instead of `@main`; it runs in a job whose token is **read-only** and that has no stored git credentials; the job that can write to your repository never runs third-party code; and it is optional (`pacman: false`).
+- **What you should do:** keep `ACCESS_TOKEN` out of the Pac-Man job (the template already does). If you want private contributions in the graph you would have to pass your own token to that action. That hands it a credential, so do it only if you accept that. To update the pin, read the new code first, then change the SHA in `.github/workflows/pacman.yaml`.
+- **The card and the buttons** need none of this. They call only the GitHub API, with your token, from code in this repository.
 
 ## How it works
 
@@ -163,7 +178,7 @@ To add a new look, add a module under `profilecard/templates/` with a `render(cf
 
 ## Credits
 
-The button style is inspired by [ignaciochiappero's profile](https://github.com/ignaciochiappero). The Pac-Man animation is generated by [abozanona/pacman-contribution-graph](https://github.com/abozanona/pacman-contribution-graph), which the workflow calls as an action; see its repository for its licence.
+The button style is inspired by [ignaciochiappero's profile](https://github.com/ignaciochiappero). The Pac-Man animation is generated by [abozanona/pacman-contribution-graph](https://github.com/abozanona/pacman-contribution-graph), which the workflow calls as an action. It has no licence file and sends some data to its author (see [Privacy](#privacy-and-third-party-code)).
 
 ## Licence
 

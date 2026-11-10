@@ -47,6 +47,10 @@ links:
 # Where generated files go (relative to this file).
 output_dir: output
 
+# Pac-Man contribution graph under the card. Set to false to leave it out of the snippet; the
+# pacman workflow then does nothing and no third-party action is called (see README, "Privacy").
+pacman: true
+
 # Label of the counter under the Pac-Man graph.
 pacman_label: Contributions
 

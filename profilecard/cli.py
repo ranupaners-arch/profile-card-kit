@@ -37,8 +37,9 @@ def write_snippet(cfg: Config) -> Path:
             + "</a>"
             for i, lk in enumerate(cfg.links))
         blocks.append(f'<p align="left">{row}</p>')
-    blocks.append(picture(cfg, pacman.out_path(cfg, "dark"), pacman.out_path(cfg, "light"),
-                          "Pac-Man eating the contribution graph"))
+    if cfg.pacman:
+        blocks.append(picture(cfg, pacman.out_path(cfg, "dark"), pacman.out_path(cfg, "light"),
+                              "Pac-Man eating the contribution graph"))
     path = cfg.output_dir / "snippet.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
@@ -73,6 +74,12 @@ def cmd_pacman(cfg: Config, args) -> None:
     pacman.add_counter(cfg, files)
 
 
+def cmd_ci_info(cfg: Config, args) -> None:
+    """key=value lines for $GITHUB_OUTPUT, so workflows do not parse YAML in shell."""
+    print(f"username={cfg.username}")
+    print(f"pacman={'true' if cfg.pacman else 'false'}")
+
+
 def cmd_ascii(cfg: Config | None, args) -> None:
     crop = tuple(int(v) for v in args.crop.split(",")) if args.crop else None
     if crop is not None and len(crop) != 4:
@@ -91,6 +98,8 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("build", help="render the card, link buttons and README snippet (no network)").set_defaults(fn=cmd_build)
     sub.add_parser("stats", help="fetch GitHub stats into the card (needs GITHUB_TOKEN or ACCESS_TOKEN)").set_defaults(fn=cmd_stats)
     sub.add_parser("update", help="build, then stats").set_defaults(fn=cmd_update)
+
+    sub.add_parser("ci-info", help="print username and pacman switch as key=value (for workflows)").set_defaults(fn=cmd_ci_info)
 
     pc = sub.add_parser("pacman", help="add the contribution counter to the generated Pac-Man SVGs")
     pc.add_argument("files", nargs="*", metavar="PATH:THEME", help="default: output/pacman/{dark,light}.svg")
@@ -115,4 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as e:
         print(f"config error: {e}", file=sys.stderr)
         return 2
+    except RuntimeError as e:                    # GitHub API problems: no traceback, just the reason
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     return 0

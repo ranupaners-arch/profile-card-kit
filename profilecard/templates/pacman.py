@@ -236,6 +236,9 @@ def process(path: Path, theme: str, calendar: dict[dt.date, int], cfg: Config) -
 def add_counter(cfg: Config, files: list[tuple[Path, str]] | None = None) -> None:
     """Add the counter to output/pacman/{dark,light}.svg (or the given path:theme pairs)."""
     files = files or [(out_path(cfg, t), t) for t in resolve(cfg.colors)]
+    for path, _ in files:
+        if not path.is_file():
+            raise RuntimeError(f"{path} not found: generate the Pac-Man SVGs first (see the pacman workflow).")
     calendar = github.contribution_calendar(cfg.username)
     for path, theme in files:
         process(path, theme, calendar, cfg)
