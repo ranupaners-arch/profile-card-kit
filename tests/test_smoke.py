@@ -119,6 +119,47 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(uptime(dt.date(2000, 1, 31), dt.date(2022, 5, 1)), "22 years, 3 months, 1 day")
 
 
+class AsciiTests(unittest.TestCase):
+    def test_placeholder_fits_grid(self):
+        from profilecard import ascii_art
+        art = ascii_art.placeholder()
+        self.assertEqual(len(art), ascii_art.ROWS)
+        self.assertLessEqual(max(map(len, art)), ascii_art.COLS)
+
+    def test_too_wide_file_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "wide.txt").write_text("x" * 80 + "\n")
+            cfg = load(write_cfg(tmp, BASE + "ascii: wide.txt\n"))
+            with self.assertRaises(ConfigError):
+                neofetch.build(cfg, "dark")
+
+    def test_taller_portrait_grows_the_card(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "tall.txt").write_text("\n".join(["x" * 10] * 60) + "\n")
+            cfg = load(write_cfg(tmp, BASE + "ascii: tall.txt\n"))
+            svg = neofetch.build(cfg, "dark")
+            self.assertNotIn('height="550px"', svg.split("\n")[1])
+
+    def test_auto_mode_on_synthetic_portrait(self):
+        try:
+            import cv2
+            import numpy as np
+        except ImportError:
+            self.skipTest("opencv not installed")
+        from profilecard import ascii_art
+        img = np.full((400, 400, 3), (200, 80, 20), np.uint8)       # plain blue backdrop
+        cv2.circle(img, (200, 150), 70, (120, 150, 200), -1)         # head
+        cv2.rectangle(img, (150, 215), (250, 400), (120, 150, 200), -1)  # neck and body
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp) / "p.png")
+            cv2.imwrite(path, img)
+            lines = ascii_art.from_image(path, auto=True).split("\n")
+        self.assertEqual(len(lines), ascii_art.ROWS)
+        self.assertLessEqual(max(map(len, lines)), ascii_art.COLS)
+        self.assertTrue(any(line.strip() for line in lines[:20]))   # head found
+        self.assertEqual(lines[0][:5].strip(), "")                   # backdrop removed at the corner
+
+
 def fake_pacman_svg(today: dt.date) -> str:
     """Minimal stand-in for the generator's output: one eaten square per active day."""
     cells = []

@@ -80,7 +80,7 @@ def cmd_ascii(cfg: Config | None, args) -> None:
     hue = tuple(int(v) for v in args.mask_hue.split(",")) if args.mask_hue else None
     if hue is not None and len(hue) != 2:
         raise SystemExit("--mask-hue needs two numbers: low,high (OpenCV hue, 0-179)")
-    print(ascii_art.from_image(args.image, crop=crop, mask_hue=hue, invert=args.invert))
+    print(ascii_art.from_image(args.image, crop=crop, mask_hue=hue, invert=args.invert, auto=args.auto))
 
 
 def parser() -> argparse.ArgumentParser:
@@ -98,6 +98,8 @@ def parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("ascii", help="turn a portrait photo into ASCII art (needs requirements-ascii.txt)")
     a.add_argument("image")
+    a.add_argument("--auto", action="store_true",
+                   help="detect the plain backdrop from the image border, remove it and crop to the subject")
     a.add_argument("--crop", help="x0,y0,x1,y1 on a 400x400 version of the image")
     a.add_argument("--mask-hue", help="low,high OpenCV hue of a plain backdrop to remove, e.g. 95,135")
     a.add_argument("--invert", action="store_true", help="for a bright subject on a dark background")
