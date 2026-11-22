@@ -48,6 +48,13 @@ Open the **Actions** tab and run **Update profile card**, then **Pacman contribu
 **7. Put the snippet in your README.**
 Replace the contents of `README.md` with the contents of `output/snippet.md`. The snippet shows the card, the link buttons, and the Pac-Man graph. Commit, then open your profile page. The Pac-Man image stays broken until its workflow has run once.
 
+### After the first successful run
+
+1. Confirm `output/snippet.md` exists and looks right.
+2. Confirm the Pac-Man SVG is no longer broken on your profile.
+3. Leave the daily workflows enabled; re-edit `profile.yaml` only when your links or bio change.
+4. If you do not want the third-party Pac-Man action, set `pacman: false` and regenerate the snippet.
+
 ## Make your ASCII portrait
 
 The card's left column is an ASCII portrait of up to **50 columns × 37 rows**. You have four options, from easiest to most hands-on.

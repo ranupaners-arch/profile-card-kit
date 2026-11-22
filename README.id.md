@@ -45,6 +45,13 @@ Buka tab **Actions**, jalankan **Update profile card**, lalu **Pacman contributi
 **7. Tempel snippet ke README.**
 Ganti isi `README.md` dengan isi `output/snippet.md`. Snippet itu menampilkan kartu, tombol tautan, dan grafik Pac-Man. Commit, lalu buka halaman profilmu. Gambar Pac-Man tetap rusak sampai workflow-nya jalan sekali.
 
+### Setelah run pertama berhasil
+
+1. Pastikan `output/snippet.md` ada dan isinya sudah benar.
+2. Pastikan SVG Pac-Man di halaman profilmu tidak lagi rusak.
+3. Biarkan workflow harian tetap aktif; edit `profile.yaml` lagi hanya jika tautan atau bio berubah.
+4. Jika tidak ingin action Pac-Man pihak ketiga, set `pacman: false` lalu regenerate snippet.
+
 ## Membuat potret ASCII
 
 Kolom kiri kartu berisi potret ASCII maksimal **50 kolom × 37 baris**. Ada empat cara, dari yang paling mudah.
